@@ -3,22 +3,30 @@ const Hotel = require('../models/hotel');
 let hotels = JSON.parse(fs.readFileSync('./data/hotels.json'))
 
 
-exports.getAllHotels = async (req,res) => {   
-    try{
-        
-        const hotels = await Hotel.find(req.query);
+exports.getAllHotels = async (req, res) => {
+    try {
+        console.log(req.query)
+
+        const queryObj = { ...req.query }
+        const excludedFields = ['sort', 'page', 'limit', 'fields']
+
+        excludedFields.forEach((ele) => {
+            delete queryObj[ele]
+        })
+        const filteredQuery = getFilteredFinalQuery(queryObj);
+        console.log(filteredQuery)
+        const hotels = await Hotel.find(filteredQuery);
         res.status(200).json({
-        status: 'success',
-        count: hotels.length,
-        data: {
-            hotels
-        }
-    })
-    }catch(err){
-        console.error(err);
+            status: 'success',
+            count: hotels.length,
+            data: [
+                hotels
+            ]
+        })
+    } catch (error) {
         res.status(500).json({
-            status: 'fail',
-            message: ('failed to load data')
+            status: 'Fail',
+            message: 'Failed to load the data'
         })
     }
 }
@@ -94,4 +102,33 @@ exports.deleteHotel = async (req,res) => {
             message: 'failed to delete document'
         })
     }
+}
+const getFilteredFinalQuery = (queryObj) => {
+    const filterQuery = {};
+    // { city: 'Chennai', 'ratings[gte]': '4', 'cheapestPrice[lt]': '3000' } QueryObject
+    // { city: 'Chennai', ratings: { $gte: 4 }, cheapestPrice: { $lt: 3000 } }  Wants to convert like this 
+
+    for (const key in queryObj) {
+        const value = queryObj[key];
+        const match = key.match(/^(.*)\[(gte|gt|lte|lt)\]$/);
+        console.log(match)
+        if (match) {
+            const fieldName = match[1] //ratings
+            const operator = `$${match[2]}` //$gte
+            if (!filterQuery[fieldName]) {
+                filterQuery[fieldName] = {};
+                filterQuery[fieldName][operator] = value
+            }
+        } else {
+            filterQuery[key] = value
+        }
+
+
+
+    }
+
+
+    console.log(filterQuery)
+
+    return filterQuery
 }
