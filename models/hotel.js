@@ -37,7 +37,7 @@ const hotelSchema = mongoose.Schema({
         type: Number,
         required: [true, "hotel cheapest price is required"]
     },
-    featured:{
+    feature:{
         type: Boolean,
         default: false
     },
@@ -45,7 +45,7 @@ const hotelSchema = mongoose.Schema({
         type: String,
         required: [true, "hotel description is required"]
     },
-    rating:{
+    ratings:{
         type: Number,
         min:0,
         max:5

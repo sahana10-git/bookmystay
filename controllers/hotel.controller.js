@@ -16,14 +16,49 @@ exports.getAllHotels = async (req, res) => {
         const filteredQuery = getFilteredFinalQuery(queryObj);
         console.log(filteredQuery)
         const hotels = await Hotel.find(filteredQuery);
+        let query = Hotel.find(filteredQuery)
+
+        if(req.query.sort){
+            const sortBy = req.query.sort.split(',').join(',')
+            query = query.sort(sortBy)
+        }else{
+            query = query.sort('cheapestPrice')
+        }
+        //projection
+        if(req.query.fields){   
+            const fields = req.query.fields.split(',').join(' ')
+            query = query.select(fields)
+        }else{
+            query = query.select('-__v') 
+        }
+        
+        const page = req.query.page || 1;   
+        const limit = req.query.limit || 10;
+        //page=1 skip-0,limit
+        //page=2 limit=10 => skip 10 
+        //page=3 limit=10 => skip 20 
+        const skip = (page - 1) * limit; 
+            query = query.skip(skip).limit(limit) 
+
+            if(req.query.page){
+                const totalHotels = Hotel.countDocuments();
+
+            if(skip >= totalHotels){
+                throw new Error("This page does not exist") 
+                }
+            }
+
+        const Hotels = await query; 
+
         res.status(200).json({
             status: 'success',
-            count: hotels.length,
+            count: Hotels.length,
             data: [
-                hotels
+                Hotels
             ]
         })
-    } catch (error) {
+        } catch (error) {
+        console.error(error);
         res.status(500).json({
             status: 'Fail',
             message: 'Failed to load the data'
@@ -97,6 +132,7 @@ exports.deleteHotel = async (req,res) => {
             message: 'hotel deleted successfully'
         })
     }catch(err){
+        console.error(err);
         res.status(500).json({
             status: 'fail',
             message: 'failed to delete document'
@@ -122,13 +158,7 @@ const getFilteredFinalQuery = (queryObj) => {
         } else {
             filterQuery[key] = value
         }
-
-
-
-    }
-
-
-    console.log(filterQuery)
-
-    return filterQuery
+   }
+         console.log(filterQuery)
+        return filterQuery
 }
