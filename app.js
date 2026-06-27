@@ -1,9 +1,11 @@
 const express = require('express')                  
 const app = express()
 const hotelRouter = require('./routers/hotelRouter')
+const authRouter = require('./routers/auth.router')
+app.use(express.json()) // data doesn't get added without this line
 // const morgan = require('morgan')
 // app.use(morgan('dev'))
-app.use(express.json()) // data doesn't get added without this line
+
 // app.use(express.static('./public'))
 
 // const logger = (req, res, next) => {
@@ -27,5 +29,24 @@ app.use(express.json()) // data doesn't get added without this line
 // })
 // app.use(logger)
 app.use('/api/v1/hotels', hotelRouter)
+app.use('/api/v1/auth', authRouter)
+
+//wildcard routing
+app.use((req, res) => { //to catch all unwanted requests
+    res.status(404).json({
+        status: 'fail',
+        message: `the ${req.originalUrl} is not found`
+    })
+})
+
+//global error handling
+app.use((error, req, res, next)=>{
+  res.status(error.status.code || 500).json({
+    status: error.status,
+    message: error.message
+  })
+  next()
+})
 
 module.exports = app 
+

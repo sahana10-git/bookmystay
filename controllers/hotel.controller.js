@@ -1,74 +1,32 @@
 const fs = require('fs');
 const Hotel = require('../models/hotel');
-let hotels = JSON.parse(fs.readFileSync('./data/hotels.json'))
+const ApiFeatures = require('../utilities/features');
 
-
+exports.getFeaturedHotels = async (req, res, next) => {
+    req.query = { ...req.query, feature: true, sort: '-ratings', limit: 4 };
+    next();
+}
 exports.getAllHotels = async (req, res) => {
     try {
-        console.log(req.query)
-
-        const queryObj = { ...req.query }
-        const excludedFields = ['sort', 'page', 'limit', 'fields']
-
-        excludedFields.forEach((ele) => {
-            delete queryObj[ele]
-        })
-        const filteredQuery = getFilteredFinalQuery(queryObj);
-        console.log(filteredQuery)
-        const hotels = await Hotel.find(filteredQuery);
-        let query = Hotel.find(filteredQuery)
-
-        if(req.query.sort){
-            const sortBy = req.query.sort.split(',').join(',')
-            query = query.sort(sortBy)
-        }else{
-            query = query.sort('cheapestPrice')
-        }
-        //projection
-        if(req.query.fields){   
-            const fields = req.query.fields.split(',').join(' ')
-            query = query.select(fields)
-        }else{
-            query = query.select('-__v') 
-        }
-        
-        const page = req.query.page || 1;   
-        const limit = req.query.limit || 10;
-        //page=1 skip-0,limit
-        //page=2 limit=10 => skip 10 
-        //page=3 limit=10 => skip 20 
-        const skip = (page - 1) * limit; 
-            query = query.skip(skip).limit(limit) 
-
-            if(req.query.page){
-                const totalHotels = Hotel.countDocuments();
-
-            if(skip >= totalHotels){
-                throw new Error("This page does not exist") 
-                }
-            }
-
-        const Hotels = await query; 
+        const features = new ApiFeatures(Hotel.find(), req.query);
+        const query = features.filter().sort().fieldLimit().pagination().queryObj;
+        const hotels = await query;
 
         res.status(200).json({
             status: 'success',
-            count: Hotels.length,
-            data: [
-                Hotels
-            ]
-        })
-        } catch (error) {
+            count: hotels.length,
+            data: hotels
+        });
+    } catch (error) {
         console.error(error);
         res.status(500).json({
-            status: 'Fail',
+            status: 'fail',
             message: 'Failed to load the data'
-        })
+        });
     }
 }
 exports.createHotel = async (req,res) => {
- try {
-    //const hotel = new Hotel(req.body);
-    //await hotel.save();
+     try {
     const hotel = await Hotel.create(req.body)
     res.status(201).json({
         status: 'success',
@@ -81,7 +39,7 @@ exports.createHotel = async (req,res) => {
     console.error(err);
     res.status(500).json({
         status: 'fail',
-        message: ("failed to create hotel")
+                        message: "failed to create hotel"
     })
 }
 }
@@ -99,7 +57,7 @@ exports.getHotelById = async (req,res) => {
     console.error(err);
     res.status(500).json({
         status: 'fail',
-        message: ("failed to get hotel")
+        message: "failed to get hotel"
     })
   } 
 }
@@ -125,8 +83,7 @@ exports.deleteHotel = async (req,res) => {
     try{
         const id = req.params.id
         
-// await Hotel.findByIdAndDelete(id)
-        await Hotel.deleteOne({_id:id})
+        await Hotel.deleteOne({_id:id})     
         res.status(200).json({
             status: 'success',
             message: 'hotel deleted successfully'
@@ -139,26 +96,170 @@ exports.deleteHotel = async (req,res) => {
         })
     }
 }
-const getFilteredFinalQuery = (queryObj) => {
-    const filterQuery = {};
-    // { city: 'Chennai', 'ratings[gte]': '4', 'cheapestPrice[lt]': '3000' } QueryObject
-    // { city: 'Chennai', ratings: { $gte: 4 }, cheapestPrice: { $lt: 3000 } }  Wants to convert like this 
+exports.gethotelstats = async (req, res) => {
+    try {
+        const hotelstats = await Hotel.aggregate([
+            { match: { type: 'hotel' } },
+            {
+               $group: {
+                _id: null,
+                avgRating: { $avg: '$ratings' },
+                minPrice: { $min: '$cheapestPrice' },
+                maxPrice: { $max: '$cheapestPrice' },
+                totalPrice: { $sum: '$cheapestPrice' }
+                }
+            },
+            { $sort: { minPrice: 1 } },
+            { $limit: 6 },
+            {$project: {_id: 0}},
+            {$addFields: {city: '$_id'}}
+            
+        ]);
 
-    for (const key in queryObj) {
-        const value = queryObj[key];
-        const match = key.match(/^(.*)\[(gte|gt|lte|lt)\]$/);
-        console.log(match)
-        if (match) {
-            const fieldName = match[1] //ratings
-            const operator = `$${match[2]}` //$gte
-            if (!filterQuery[fieldName]) {
-                filterQuery[fieldName] = {};
-                filterQuery[fieldName][operator] = value
+        res.status(200).json({
+            status: 'success',
+            data: {
+                hotelstats
             }
-        } else {
-            filterQuery[key] = value
-        }
-   }
-         console.log(filterQuery)
-        return filterQuery
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'fail',
+            message: 'failed to get document: ' + err.message
+        });
+    }
 }
+
+
+
+
+exports.getHotelByCategory = async (req, res) => {
+    try {
+        const hotelByCategory = await Hotel.aggregate([
+            { $unwind: '$category' },
+            {$group: {
+                    _id: '$category',
+                    hotels: { $push: '$name' },
+                    count: { $sum: 1 }
+                }
+            },
+            // { $sort: { count: -1 } },
+            // { $addFields: { category: '$_id' } },
+            // { $project: { _id: 0 } },
+            { $sort: { minPrice: 1 } },
+            { $limit: 6 },
+            { $addFields: { city: '$_id' } },
+            { $project: { _id: 0 } }
+       ])
+            res.status(200).json({
+            status: 'success',
+            count: hotelByCategory.length,
+            data: {
+                hotelByCategory
+            }
+        })
+    } catch (err) {
+        res.status(500).json({
+            status: 'Fail',
+            message: 'Failed to get a Document' + err.message
+        })
+    }
+}
+
+exports.getHotelByCity = async (req, res) => {
+    try {
+        const hotelByCity = await Hotel.aggregate([
+            
+            {
+                $group:{
+                    _id: null,
+                    hotels:{$push:'$name'},
+                    count: {$sum: 1}
+                }
+            },
+    
+        ]);
+
+        res.status(200).json({
+            status: 'success',
+            count: hotelByCity.length,
+            data: {
+                hotelByCity
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'fail',
+            message: 'failed to load data'
+        });
+    }
+};
+
+exports.getHotelByType = async (req, res) => {
+    try {
+        const hotelByType = await Hotel.aggregate([
+            { match: { type: 'hotel' } },
+            {
+                $group: {
+                    _id: null,
+                    avgRating: { $avg: '$ratings' },
+                    minPrice: { $min: '$cheapestPrice' },
+                    maxPrice: { $max: '$cheapestPrice' },
+                    totalPrice: { $sum: '$cheapestPrice' }
+                }
+            },
+            { $sort: { minPrice: 1 } },
+            { $limit: 6 },
+            {$project: {_id: 0}},
+            {$addFields: {city: '$_id'}}
+        ]);
+
+        res.status(200).json({
+            status: 'success',
+            count: hotelByType.length,
+            data: {
+                hotelByType
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'fail',
+            message: 'failed to load data'
+        });
+    }
+};
+
+exports.getHotelByFeature = async (req, res) => {
+    try {
+        const hotelByFeature = await Hotel.aggregate([
+            { match: { type: 'hotel' } },
+            {
+                $group: {
+                    _id: null,
+                    avgRating: { $avg: '$ratings' },
+                    minPrice: { $min: '$cheapestPrice' },
+                    maxPrice: { $max: '$cheapestPrice' },
+                    totalPrice: { $sum: '$cheapestPrice' }
+                }
+            },
+            { $sort: { minPrice: 1 } },
+            { $limit: 6 },
+            {$project: {_id: 0}},
+            {$addFields: {city: '$_id'}}
+        ]);
+
+        res.status(200).json({
+            status: 'success',
+            count: hotelByFeature.length,
+            data: {
+                hotelByFeature
+            }
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'fail',
+            message: 'failed to load data'
+        });
+    }
+};
+
