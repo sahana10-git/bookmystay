@@ -31,6 +31,7 @@ exports.login = async (req,res)=>{
     try{
         const email = req.body.email
         const password = req.body.password
+        console.log(email)
 
         if(!email || email === ''){
             res.status(400).json({
